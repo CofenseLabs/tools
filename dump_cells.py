@@ -1,3 +1,18 @@
+"""
+(c) 2020 Cofense Inc. (https://cofense.com)
+Dump cells from an Excell spreadsheet.
+
+Usage: dump_cells.py [OPTIONS]
+
+Options:
+  --infile TEXT   Excel file  [required]
+  --sheet TEXT    Index of sheet
+  --rows TEXT     Row to select - single or range
+  --cols TEXT     Column to select - single or range
+  --outfile TEXT  Save dumped cells to a file
+  --csv           Dump cells to csv
+  --help          Show this message and exit.
+
                     GNU AFFERO GENERAL PUBLIC LICENSE
                        Version 3, 19 November 2007
 
@@ -658,3 +673,163 @@ specific requirements.
 if any, to sign a "copyright disclaimer" for the program, if necessary.
 For more information on this, and how to apply and follow the GNU AGPL, see
 <https://www.gnu.org/licenses/>.
+"""
+import sys
+import os.path
+try:
+    import click
+    import xlrd
+except ImportError:
+    print("Install click and xlrd Python modules")
+    sys.exit(0)
+
+
+def dump_to_file(ofile, data):
+    if os.path.exists(ofile):
+        print('{} already exists.'.format(ofile))
+        sys.exit(0)
+    with open(ofile, 'w') as f:
+        if isinstance(data, list):
+            if isinstance(data[0], list):
+                for row in data:
+                    f.write('{}\n'.format(','.join(row)))
+            else:
+                for row in data:
+                    f.write('{}\n'.format(row))
+        else:
+            f.write('{}\n'.format(data))
+
+
+def is_file(fname):
+    if not os.path.exists(fname):
+        print('{} does not exist.'.format(fname))
+        return False
+    if not os.path.isfile(fname):
+        print('{} is a directory.'.format(fname))
+        return False
+    return True
+
+
+def get_cells(sheet, rows, cols):
+    try:
+        _ = sheet.name
+    except AttributeError:
+        print('get_cells() requires an xlrd.sheet object')
+        return []
+    if rows.startswith('-') or cols.startswith('-'):
+        print('Range value is incorrect: {}, {}'.format(rows, cols))
+        return []
+    rstart, rend, cstart, cend = None, None, None, None
+    if not rows:
+        rstart, rend = 0, sheet.nrows
+    elif '-' in rows:
+        rows = rows.split('-')
+        try:
+            if len(rows) == 1:
+                rstart, rend = int(rows[0]), sheet.nrows
+            else:
+                rstart, rend = int(rows[0]), (int(rows[1])+1)
+        except ValueError:
+            print('Range values are not an integer: {}'.format(rows))
+            return []
+    else:
+        try:
+            rstart = int(rows)
+        except ValueError:
+            print('Range value is not an integer: {}'.format(rows))
+            return []
+    if not cols:
+        cstart, cend = 0, sheet.ncols
+    elif '-' in cols:
+        cols = cols.split('-')
+        try:
+            if len(cols) == 1:
+                cstart, cend = int(cols[0]), sheet.ncols
+            else:
+                cstart, cend = int(cols[0]), (int(cols[1])+1)
+        except ValueError:
+            print('Range values are not an integer: {}'.format(cols))
+            return []
+    else:
+        try:
+            cstart = int(cols)
+        except ValueError:
+            print('Range value is not an integer: {}'.format(cols))
+            return []
+    for idx in [rstart, rend, cstart, cend]:
+        if not isinstance(idx, int) and idx is not None:
+            print('Range value is not an integer: {}'.format(idx))
+            return []
+    try:
+        if rend and cend:
+            cells = [[c.value for c in sheet.row_slice(i, cstart, cend)]
+                      for i in range(rstart, rend)]
+        elif rend and not cend:
+            cells = [c.value for c in sheet.col_slice(cstart, rstart, rend)]
+        elif cend and not rend:
+            cells = [c.value for c in sheet.row_slice(rstart, cstart, cend)]
+        else:
+            cells = [sheet.cell_value(rstart, cstart)]
+    except IndexError:
+        print('Range values extend beyond the end of the spreadsheet.')
+        print('Index values start at offset 0.')
+        print('Number of columns: {}'.format(sheet.ncols))
+        print('Number of rows: {}'.format(sheet.nrows))
+        return []
+    return cells
+
+
+@click.command()
+@click.option('--infile', required=True, help="Excel file")
+@click.option('--sheet', default=None, help='Index of sheet')
+@click.option('--rows', default=None, help='Row to select - single or range')
+@click.option('--cols', default=None, help='Column to select - single or range')
+@click.option('--outfile', default=False, help='Save dumped cells to a file')
+@click.option('--csv', is_flag=True, help='Dump cells to csv')
+def dump_cells(infile, sheet, rows, cols, outfile, csv):
+    if not is_file(infile):
+        sys.exit(0)
+    try:
+        book = xlrd.open_workbook(infile)
+    except xlrd.biffh.XLRDError:
+        print('{} is not an XLS or XLSX file'.format(infile))
+        sys.exit(0)
+    sheets = book.sheet_names()
+    if not sheet:
+        print('Number of sheets: {}'.format(len(sheets)))
+        print('Sheet names: {}'.format(', '.join(sheets)))
+        sys.exit(0)
+    try:
+        worksheet = book.sheet_by_index(int(sheet))
+    except IndexError:
+        print('Sheet index does not exist: {}'.format(sheet))
+        sys.exit(0)
+    if not rows and not cols:
+        if not csv and not outfile:
+            print('Number of columns: {}'.format(worksheet.ncols))
+            print('Number of rows: {}'.format(worksheet.nrows))
+        if csv:
+            rows = [[c.value for c in worksheet.row_slice(i, 0)]
+                    for i in range(worksheet.nrows)]
+            if outfile:
+                dump_to_file(outfile, rows)
+            else:
+                print(u'{}'.format(u'\n'.join([u','.join(map(unicode, row))
+                                             for row in rows])))
+        sys.exit(0)
+    if not cols:
+        cells = get_cells(worksheet, rows, None)
+    elif not rows:
+        cells = get_cells(worksheet, None, cols)
+    else:
+        cells = get_cells(worksheet, rows, cols)
+    if outfile:
+        dump_to_file(outfile, cells)
+    else:
+        print('{}'.format('\n'.join([','.join(map(str, row))
+                                     if isinstance(row, list) else str(row)
+                                     for row in cells])))
+
+
+if __name__ == '__main__':
+    dump_cells()

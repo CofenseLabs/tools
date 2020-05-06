@@ -1,2 +1,2 @@
 # tools
-Tools repository
+Repository of useful tools developed by CofenseLabs
