@@ -9,4 +9,4 @@ Usage demonstrated in this [Lab Note](https://cofenselabs.com/nothing-to-see-her
 
 * dumper.py - A python script demonstrating the decoding a encoded shellcode, plus
 the decoder stub, using the unicorn emulation engine.
-Usage demonstrated in this [Lab Note]()
+Usage demonstrated in this [Lab Note](https://cofenselabs.com/fell-deeds-awake/)
